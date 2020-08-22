@@ -8,6 +8,7 @@ from threading import Thread
 import youtube_dl
 from pathlib import Path
 from collections import ChainMap
+import datetime
 
 app = Bottle()
 
@@ -43,7 +44,9 @@ def q_size():
 def q_put():
     url = request.forms.get("url")
     options = {
-        'format': request.forms.get("format")
+        'format': request.forms.get("format"),
+        'start': request.forms.get("start"),
+        'end': request.forms.get("end")
     }
 
     if not url:
@@ -103,9 +106,37 @@ def get_ydl_options(request_options):
             'preferedformat': ydl_vars['YDL_RECODE_VIDEO_FORMAT'],
         })
 
+    postprocessor_args = []
+
+    start_time_input = request_options.get('start')
+    if start_time_input:
+        # Convert the given start time format (HH:MM:SS) to seconds.
+        inputs = start_time_input.split(':')
+        seconds_in_minute = 60
+        start_time_in_seconds = 0
+        i=1
+        for input in reversed(inputs):
+            start_time_in_seconds += (float(input) * i)
+            i = i*seconds_in_minute
+
+        # Divide the given time in 2. I don't know why but ffmpeg cuts the video
+        # at double the given time. (eg. at 01:00 when given 00:30).
+        real_start_time_in_seconds = start_time_in_seconds / 2
+
+        # Now convert it back to HH:MM:SS and add it to the postprocessor_args list.
+        start_time_delta = datetime.timedelta(seconds=real_start_time_in_seconds)
+        start_time_str = str(start_time_delta)
+        postprocessor_args.extend(['-ss', start_time_str])
+
+    end_time = request_options.get('end')
+    if end_time:
+        postprocessor_args.extend(['-to', end_time])
+
     return {
         'format': ydl_vars['YDL_FORMAT'],
+        'verbose': True,
         'postprocessors': postprocessors,
+        'postprocessor_args': postprocessor_args,
         'outtmpl': ydl_vars['YDL_OUTPUT_TEMPLATE'],
         'download_archive': ydl_vars['YDL_ARCHIVE_FILE']
     }
